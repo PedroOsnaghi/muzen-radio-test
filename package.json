@@ -16,6 +16,7 @@
     "@gltf-transform/extensions": "^4.2.0",
     "@gltf-transform/functions": "^4.2.0",
     "lil-gui": "^0.20.0",
+    "postprocessing": "^6.37.6",
     "three": "^0.178.0"
   }
 }

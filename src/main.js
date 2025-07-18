@@ -3,10 +3,15 @@ import GUI from "lil-gui";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
+import {
+  BloomEffect,
+  EffectComposer,
+  EffectPass,
+  RenderPass,
+  SMAAEffect,
+  SMAAPreset,
+} from "postprocessing";
 
 const wireButton = document.querySelector(".btn-wireframe");
 wireButton.addEventListener("click", () => {
@@ -53,9 +58,6 @@ const debugObject = {
   renderToneMapping: toneMappingOptions.ACESFilmic,
   renderToneMappingExposure: 1.6,
   animation: true,
-  bloomStrength: 0.2,
-  bloomRadius: 0.2,
-  bloomThreshold: 0.5,
 };
 
 const sceneObject = gui.addFolder("Scene");
@@ -86,22 +88,6 @@ ModelObject.add(
   { triggerWireScan: () => showWireOverlay() },
   "triggerWireScan"
 ).name("Trigger Wire Scan");
-//bloom
-ModelObject.add(debugObject, "bloomStrength")
-  .min(0)
-  .max(2)
-  .step(0.01)
-  .name("Bloom Strength");
-ModelObject.add(debugObject, "bloomRadius")
-  .min(0)
-  .max(1)
-  .step(0.01)
-  .name("Bloom Radius");
-ModelObject.add(debugObject, "bloomThreshold")
-  .min(0)
-  .max(1)
-  .step(0.01)
-  .name("Bloom Threshold");
 
 const animationOptions = gui.addFolder("Animation Options");
 animationOptions.add(debugObject, "animation").name("Enable Animation");
@@ -114,7 +100,7 @@ const camera = new THREE.PerspectiveCamera(
   42,
   window.innerWidth / window.innerHeight,
   0.01,
-  100
+  50
 );
 
 //initial camera position
@@ -127,17 +113,21 @@ scene.add(camera);
 const canvas = document.querySelector(".webgl");
 const renderer = new THREE.WebGLRenderer({
   canvas: canvas,
-  antialias: true,
+  antialias: false,
+  stencil: false, // Disable stencil buffer
+  depth: false, // Disable depth buffer
   alpha: true, // Enable transparency
   powerPreference: "high-performance", // Prefer high-performance GPU
 });
 renderer.setSize(sizes.width, sizes.height);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = debugObject.renderToneMapping;
-renderer.toneMappingExposure = 1.6;
+renderer.toneMappingExposure = debugObject.renderToneMappingExposure;
 renderer.physicallyCorrectLights = true;
 renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.setClearColor(0x000000, 0);
+renderer.autoClear = false; // Disable auto-clear to allow transparent background
+renderer.setClearColor(0x000000, 0); // Set clear color to transparent black
+// Set clear color to transparent black
 
 //Controls
 const controls = new OrbitControls(camera, document.querySelector(".webgl"));
@@ -174,35 +164,7 @@ gltfLoader.load("/model/muzenspeaker-opt.glb", (gltf) => {
   model.traverse((child) => {
     if (child.isMesh && child.material) {
       const mat = child.material;
-      mat.transparent = true; // Ensure the material is transparent
 
-      // Base color (albedo / diffuse)
-      if (mat.map) {
-        mat.map.colorSpace = THREE.SRGBColorSpace;
-      }
-
-      // Normal map
-      if (mat.normalMap) {
-        mat.normalMap.colorSpace = THREE.LinearSRGBColorSpace;
-      }
-
-      // Roughness map
-      if (mat.roughnessMap) {
-        mat.roughnessMap.colorSpace = THREE.LinearSRGBColorSpace;
-      }
-
-      // Metalness map
-      if (mat.metalnessMap) {
-        mat.metalnessMap.colorSpace = THREE.LinearSRGBColorSpace;
-      }
-
-      // AO map
-      if (mat.aoMap) {
-        mat.aoMap.colorSpace = THREE.LinearSRGBColorSpace;
-        console.log(mat.aoMap);
-      }
-
-      console.log(mat);
       const newMat = mat.clone();
       newMat.onBeforeCompile = (shader) => {
         // Inyectamos uniformes personalizados
@@ -261,10 +223,12 @@ gltfLoader.load("/model/muzenspeaker-opt.glb", (gltf) => {
   }
 });
 
+//Environment Map
 const rgbeLoader = new RGBELoader();
 rgbeLoader.load("/hdri/studio_small_08_1k.hdr", (texture) => {
   texture.mapping = THREE.EquirectangularReflectionMapping;
   scene.environment = texture;
+  scene.background = null;
   scene.environmentIntensity = debugObject.envMapIntensity;
 });
 
@@ -301,20 +265,39 @@ window.addEventListener("resize", () => {
   renderer.setSize(sizes.width, sizes.height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 });
-//POST PROCESSING
+
+//Postprocessing
 const composer = new EffectComposer(renderer);
-const renderPass = new RenderPass(scene, camera);
-composer.addPass(renderPass);
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(sizes.width, sizes.height),
-  debugObject.bloomStrength,
-  debugObject.bloomRadius,
-  debugObject.bloomThreshold
+composer.addPass(new RenderPass(scene, camera));
+
+composer.addPass(
+  new EffectPass(
+    camera,
+    new BloomEffect({
+      luminanceThreshold: 0.2,
+      luminanceSmoothing: 0.5,
+      intensity: 0.3,
+      radius: 0.25,
+    })
+  )
 );
-composer.addPass(bloomPass);
+
+composer.addPass(
+  new EffectPass(
+    camera,
+    new SMAAEffect({
+      edgeDetectionThreshold: 0.2,
+      edgeDetectionMaxDistance: 10,
+      edgeDetectionMinLength: 1,
+      blendFunction: THREE.AdditiveBlending,
+      preset: SMAAPreset.HIGH,
+    })
+  )
+);
 
 //Animate
 const clock = new THREE.Clock();
+
 function showWireOverlay(duration = 7.0) {
   fadeProgress = 0.0;
   fadeTimer = clock.getElapsedTime();
