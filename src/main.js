@@ -128,6 +128,8 @@ const canvas = document.querySelector(".webgl");
 const renderer = new THREE.WebGLRenderer({
   canvas: canvas,
   antialias: true,
+  alpha: true, // Enable transparency
+  powerPreference: "high-performance", // Prefer high-performance GPU
 });
 renderer.setSize(sizes.width, sizes.height);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -135,6 +137,7 @@ renderer.toneMapping = debugObject.renderToneMapping;
 renderer.toneMappingExposure = 1.6;
 renderer.physicallyCorrectLights = true;
 renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.setClearColor(0x000000, 0);
 
 //Controls
 const controls = new OrbitControls(camera, document.querySelector(".webgl"));
@@ -165,6 +168,8 @@ gltfLoader.load("/model/muzenspeaker-opt.glb", (gltf) => {
   model.position.set(0, -0.5, 0);
   camera.lookAt(model.position);
   scene.add(model);
+
+  const loader = document.querySelector(".loader-container");
 
   model.traverse((child) => {
     if (child.isMesh && child.material) {
@@ -249,6 +254,11 @@ gltfLoader.load("/model/muzenspeaker-opt.glb", (gltf) => {
       child.material = newMat;
     }
   });
+
+  // Hide the loader once the model is loaded
+  if (loader) {
+    loader.classList.add("hidden");
+  }
 });
 
 const rgbeLoader = new RGBELoader();
